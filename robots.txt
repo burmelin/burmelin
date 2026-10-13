@@ -12,6 +12,7 @@ Disallow: /supabase-schema.sql
 Disallow: /generate_banners.py
 Disallow: /package.json
 Disallow: /netlify/
+Disallow: /brand/
 
 # Everything else is the shop, and is welcome.
 Allow: /

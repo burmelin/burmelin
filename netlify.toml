@@ -35,6 +35,13 @@
   status = 404
   force = true
 
+# Internal brand guidelines, including the gaps audit. Not for the public site.
+[[redirects]]
+  from = "/brand/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
 # Belt and braces alongside the noindex meta tag in admin.html: the header
 # applies even when a crawler does not parse the HTML.
 [[headers]]
