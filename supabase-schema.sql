@@ -44,6 +44,14 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at    timestamptz DEFAULT now()
 );
 
+-- Newsletter signups from the home page (written by subscribe.js).
+CREATE TABLE IF NOT EXISTS subscribers (
+  id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  email       text NOT NULL UNIQUE,
+  source      text DEFAULT 'website',
+  created_at  timestamptz DEFAULT now()
+);
+
 -- Columns added after the original tables were created.
 ALTER TABLE products ADD COLUMN IF NOT EXISTS variants jsonb DEFAULT '{}'::jsonb;
 ALTER TABLE orders   ADD COLUMN IF NOT EXISTS email    text  DEFAULT '';
@@ -72,6 +80,7 @@ UPDATE products SET variants = '{}'::jsonb WHERE variants IS NULL;
 --   create-checkout.js service key INSERT orders (Stripe)   → bypasses RLS
 --   get-session.js     service key SELECT/UPDATE orders     → bypasses RLS
 --   stripe-webhook.js  service key SELECT/UPDATE orders     → bypasses RLS
+--   subscribe.js       service key INSERT subscribers       → bypasses RLS
 --   admin-api.js       service key everything               → bypasses RLS
 --
 -- The service_role key (sb_secret_…) bypasses RLS entirely, so only the
@@ -84,6 +93,7 @@ UPDATE products SET variants = '{}'::jsonb WHERE variants IS NULL;
 
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscribers ENABLE ROW LEVEL SECURITY;  -- no public policy: service key only
 
 -- Drop any earlier policies, including the two permissive ones from the
 -- original setup that granted FOR ALL USING (true).
@@ -106,9 +116,9 @@ CREATE POLICY "Public read active products"
 -- Expect: both tables rowsecurity = true
 SELECT tablename, rowsecurity
   FROM pg_tables
- WHERE schemaname = 'public' AND tablename IN ('products', 'orders');
+ WHERE schemaname = 'public' AND tablename IN ('products', 'orders', 'subscribers');
 
 -- Expect: exactly one row — Public read active products, {anon}, SELECT
 SELECT tablename, policyname, roles, cmd
   FROM pg_policies
- WHERE schemaname = 'public' AND tablename IN ('products', 'orders');
+ WHERE schemaname = 'public' AND tablename IN ('products', 'orders', 'subscribers');

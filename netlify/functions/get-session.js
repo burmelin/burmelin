@@ -23,10 +23,7 @@ async function saveToSupabase(supabaseUrl, serviceKey, orderId, customer) {
     customer_name: customer.name || 'Stripe Customer',
     email:   customer.email || '',
     phone:   customer.phone || '',
-    address: customer.address
-      ? [customer.address.line1, customer.address.line2, customer.address.city, customer.address.state, customer.address.postal_code, customer.address.country]
-          .filter(Boolean).join(', ')
-      : ''
+    address: customer.address || ''
   });
 
   return new Promise((resolve, reject) => {
@@ -72,14 +69,21 @@ exports.handler = async (event) => {
 
     const customer = session.customer_details || {};
     const orderId  = session.metadata && session.metadata.order_id;
-    const shipping = session.shipping_details || session.customer_details || {};
+    // Where the parcel goes. Newer Stripe API versions keep it under
+    // collected_information; older ones under shipping_details. Only fall
+    // back to the billing address when neither exists, because a gift can
+    // be paid by one person and shipped to another.
+    const shipping = (session.collected_information && session.collected_information.shipping_details)
+                  || session.shipping_details
+                  || {};
     const addr     = shipping.address || customer.address || {};
+    const recipient = shipping.name && shipping.name !== customer.name ? shipping.name : '';
 
     const result = {
       name:    customer.name || '',
       email:   customer.email || '',
       phone:   customer.phone || '',
-      address: [addr.line1, addr.line2, addr.city, addr.state, addr.postal_code, addr.country].filter(Boolean).join(', '),
+      address: [recipient && 'Ship to: ' + recipient, addr.line1, addr.line2, addr.city, addr.state, addr.postal_code, addr.country].filter(Boolean).join(', '),
       orderId: orderId || '',
       // Lets the success page tell a confirmed payment from a pending
       // PromptPay one, and report the real total to analytics.
@@ -88,7 +92,7 @@ exports.handler = async (event) => {
     };
 
     if (orderId && supabaseUrl && serviceKey) {
-      await saveToSupabase(supabaseUrl, serviceKey, orderId, { ...customer, address: addr });
+      await saveToSupabase(supabaseUrl, serviceKey, orderId, { ...customer, address: result.address });
     }
 
     return { statusCode: 200, headers, body: JSON.stringify(result) };
