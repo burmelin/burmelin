@@ -15,3 +15,5 @@ Disallow: /netlify/
 
 # Everything else is the shop, and is welcome.
 Allow: /
+
+Sitemap: https://burmelin.com/sitemap.xml

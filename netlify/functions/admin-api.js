@@ -55,6 +55,45 @@ function supabaseRequest(url, key, method, bodyStr) {
   });
 }
 
+// ── LOGIN THROTTLE ────────────────────────────────────────────────────
+//
+// Slows password guessing. Every wrong password costs the caller a fixed
+// delay, and an address that keeps failing is locked out for a while.
+//
+// The counter lives in the function's memory, so it only holds while the
+// same instance stays warm and is not shared between instances. It makes
+// guessing slow, not impossible: the real protection is a long, random
+// ADMIN_PASSWORD (16+ characters).
+const FAIL_DELAY_MS   = 1500;
+const MAX_FAILS       = 5;
+const LOCKOUT_MS      = 15 * 60 * 1000;
+const failures        = new Map();   // ip -> { count, until }
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function clientIp(event) {
+  const h = event.headers || {};
+  return h['x-nf-client-connection-ip'] ||
+         String(h['x-forwarded-for'] || '').split(',')[0].trim() ||
+         'unknown';
+}
+
+function isLockedOut(ip) {
+  const f = failures.get(ip);
+  return !!(f && f.until && f.until > Date.now());
+}
+
+function recordFailure(ip) {
+  const now = Date.now();
+  const f = failures.get(ip) || { count: 0, until: 0 };
+  if (f.until && f.until <= now) { f.count = 0; f.until = 0; }
+  f.count += 1;
+  if (f.count >= MAX_FAILS) f.until = now + LOCKOUT_MS;
+  failures.set(ip, f);
+  // Keep the map from growing without bound on a long-lived instance.
+  if (failures.size > 5000) failures.clear();
+}
+
 const json = (statusCode, obj) => ({
   statusCode,
   headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -77,10 +116,20 @@ exports.handler = async (event) => {
     return json(500, { error: 'Admin API is not configured.' });
   }
 
+  const ip = clientIp(event);
+  if (isLockedOut(ip)) {
+    await sleep(FAIL_DELAY_MS);
+    return json(429, { error: 'Too many failed attempts. Try again in 15 minutes.' });
+  }
+
   const supplied = event.headers['x-admin-key'] || event.headers['X-Admin-Key'] || '';
   if (!timingSafeEqual(supplied, adminPassword)) {
+    recordFailure(ip);
+    console.warn('admin-api: failed login from', ip);
+    await sleep(FAIL_DELAY_MS);
     return json(401, { error: 'Unauthorized' });
   }
+  failures.delete(ip);
 
   let payload;
   try {

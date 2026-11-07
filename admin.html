@@ -484,6 +484,8 @@ async function doLogin() {
   }
   err.textContent = outcome === 'bad'
     ? 'Incorrect admin key — please try again.'
+    : outcome === 'locked'
+    ? 'Too many wrong attempts. Wait 15 minutes, then try again.'
     : 'Cannot reach the admin API. Check that ADMIN_PASSWORD and SUPABASE_SERVICE_KEY are set in Netlify.';
   err.classList.add('show');
   document.getElementById('keyInput').focus();
@@ -500,6 +502,7 @@ async function probeKey(key) {
     });
     if (res.ok)             return 'ok';
     if (res.status === 401) return 'bad';
+    if (res.status === 429) return 'locked';
     return 'error';
   } catch (e) {
     return 'error';
@@ -515,15 +518,16 @@ function showApp() {
 }
 
 async function checkSession() {
-  const urlKey = new URLSearchParams(location.search).get('key');
-  const key    = urlKey || sessionStorage.getItem('ak');
+  // A ?key= link is no longer accepted: a password in a URL ends up in
+  // server logs and browser history. Strip one if an old bookmark has it.
+  if (new URLSearchParams(location.search).has('key')) {
+    history.replaceState(null, '', location.pathname);
+  }
+  const key = sessionStorage.getItem('ak');
   if (!key) return;
 
   // Verified against the server, not against a constant in this file.
   if (await probeKey(key) === 'ok') {
-    sessionStorage.setItem('ak', key);
-    // Don't leave the password sitting in the address bar or browser history.
-    if (urlKey) history.replaceState(null, '', location.pathname);
     showApp();
   } else {
     sessionStorage.removeItem('ak');

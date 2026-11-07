@@ -14,7 +14,7 @@
 <meta property="og:url" id="ogUrl" content=""/>
 <meta property="product:price:amount" id="ogPrice" content=""/>
 <meta property="product:price:currency" content="THB"/>
-<link rel="icon" type="image/png" href="https://res.cloudinary.com/dtpvflgt1/image/upload/v1773996384/LOGO_q2howi.png"/>
+<link rel="icon" type="image/png" href="https://res.cloudinary.com/dtpvflgt1/image/upload/f_auto,q_auto,h_120/v1773996384/LOGO_q2howi.png"/>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=Barlow+Condensed:wght@700;800&display=swap" rel="stylesheet">
@@ -220,7 +220,7 @@ src="https://www.facebook.com/tr?id=1016610101191905&ev=PageView&noscript=1"
     <span></span><span></span><span></span>
   </button>
   <div class="header-logo" onclick="location.href='index.html'">
-    <img src="https://res.cloudinary.com/dtpvflgt1/image/upload/v1773996384/LOGO_q2howi.png" alt="BURMELIN" style="height:32px;width:auto"/>
+    <img src="https://res.cloudinary.com/dtpvflgt1/image/upload/f_auto,q_auto,h_120/v1773996384/LOGO_q2howi.png" alt="BURMELIN" style="height:32px;width:auto"/>
     <span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;letter-spacing:.12em">BURMELIN</span>
   </div>
   <div class="header-actions">
@@ -461,6 +461,44 @@ function renderProduct() {
   document.getElementById('ogImage').content        = p.img || '';
   document.getElementById('ogUrl').content          = location.href;
   document.getElementById('ogPrice').content        = p.price;
+
+  // Structured data so Google can show price and stock in search results.
+  // Google renders this page's JavaScript, so adding it here is enough.
+  try {
+    const canonical = location.origin + '/product.html?id=' + encodeURIComponent(p.id);
+    let link = document.querySelector('link[rel="canonical"]');
+    if (!link) { link = document.createElement('link'); link.rel = 'canonical'; document.head.appendChild(link); }
+    link.href = canonical;
+    const cols = (p.colors && p.colors.length) ? p.colors.map(c => c.name) : [''];
+    const szs  = (p.sizes && p.sizes.length) ? p.sizes : [''];
+    const anyLive = cols.some(c => szs.some(z => isAvailable(p, c, z)));
+    const images = [p.img].concat((p.colors || []).map(c => c && c.img)).filter(Boolean);
+    const ld = document.createElement('script');
+    ld.type = 'application/ld+json';
+    ld.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: p.name,
+      description: p.description || `${p.name} by BURMELIN`,
+      image: images.slice(0, 6),
+      sku: p.code || String(p.id),
+      brand: { '@type': 'Brand', name: 'BURMELIN' },
+      offers: {
+        '@type': 'Offer',
+        url: canonical,
+        priceCurrency: 'THB',
+        price: Number(p.price),
+        availability: anyLive ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        itemCondition: 'https://schema.org/NewCondition',
+        shippingDetails: {
+          '@type': 'OfferShippingDetails',
+          shippingRate: { '@type': 'MonetaryAmount', value: 0, currency: 'THB' },
+          shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'TH' }
+        }
+      }
+    }).replace(/</g, '\\u003c');
+    document.head.appendChild(ld);
+  } catch (e) { /* structured data is optional */ }
 
   document.getElementById('breadcrumbName').textContent = p.name;
   document.getElementById('prodCat').textContent        = catLabel;

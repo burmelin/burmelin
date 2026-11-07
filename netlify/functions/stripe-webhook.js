@@ -333,11 +333,19 @@ exports.handler = async (event) => {
     if (session.error) throw new Error(session.error.message);
 
     const customer = session.customer_details || {};
-    const shipping = session.shipping_details || session.customer_details || {};
+    // Where the parcel goes. Newer Stripe API versions keep it under
+    // collected_information; older ones under shipping_details. Only fall
+    // back to the billing address when neither exists, because a gift can
+    // be paid by one person and shipped to another.
+    const shipping = (session.collected_information && session.collected_information.shipping_details)
+                  || session.shipping_details
+                  || {};
     const addr     = shipping.address || customer.address || {};
+    const recipient = shipping.name && shipping.name !== customer.name ? shipping.name : '';
     const orderId  = (session.metadata && session.metadata.order_id) || session.client_reference_id;
 
     const fullAddress = [
+      recipient && 'Ship to: ' + recipient,
       addr.line1, addr.line2, addr.city,
       addr.state, addr.postal_code, addr.country
     ].filter(Boolean).join(', ');
