@@ -1,4 +1,20 @@
-const https = require('https');
+const https  = require('https');
+const crypto = require('crypto');
+
+// Creates the Stripe Checkout session AND the order row, both from data the
+// server trusts.
+//
+// The browser sends only what the customer picked: product id (or name),
+// colour, size and quantity. Everything that decides how much money changes
+// hands - which product it is, its name and its price - comes from the
+// database. A cart line that does not match an active product is refused,
+// and if the database cannot be reached checkout stops rather than trusting
+// the browser's prices.
+//
+// Env vars: STRIPE_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
+// (SUPABASE_ANON_KEY is accepted for the read, but the order insert needs
+// the service key because `orders` has no public policy). URL is set by
+// Netlify to the site's primary address.
 
 // ── SHIPPING ───────────────────────────────────────────
 //
@@ -10,24 +26,28 @@ const https = require('https');
 // domestic one is unenforceable - a buyer abroad would simply pick the free
 // one. Charging for international requires knowing the destination before
 // the session exists, which means collecting it in the cart first.
-//
-// If international comes back later: add a country step to the cart, have
-// this function pick the single rate that applies, and pass only that one.
 const SHIPPING_COUNTRIES = ['TH'];
-
 const SHIPPING_OPTIONS = [
   { name: 'Free Shipping', min: 1, max: 3 },
 ];
 
+const MAX_LINES = 30;     // Stripe allows 100; no real cart gets near 30
+const MAX_QTY   = 20;
+
+// Only images we host may be shown on the Stripe page.
+const IMAGE_PREFIX = 'https://res.cloudinary.com/dtpvflgt1/';
+
+const json = (statusCode, obj) => ({
+  statusCode,
+  headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  body: JSON.stringify(obj),
+});
+
 // ── AVAILABILITY ──────────────────────────────────────────────────────
-//
-// The browser already greys out sold-out sizes and colours, but that check
-// lives in the page and can be edited away. This is the authoritative one.
 //
 // Mirrors the `variants` map written by the admin panel:
 //   { "Navy": { "S": false } }
 // A missing key means AVAILABLE — only an explicit false is sold out.
-
 function isAvailable(p, colorName, sizeName) {
   const v = p && p.variants;
   if (!v || typeof v !== 'object') return true;
@@ -36,105 +56,134 @@ function isAvailable(p, colorName, sizeName) {
   return row[sizeName || ''] !== false;
 }
 
-function supabaseGet(url, key) {
+function request(opts, bodyStr) {
   return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const req = https.request({
-      hostname: parsed.hostname,
-      path: parsed.pathname + parsed.search,
-      method: 'GET',
-      headers: {
-        'apikey': key,
-        'Authorization': 'Bearer ' + key,
-        'Content-Type': 'application/json',
-      },
-    }, (res) => {
+    const req = https.request(opts, (res) => {
       let data = '';
       res.on('data', c => data += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch (e) { reject(new Error('Invalid response from Supabase')); }
-      });
+      res.on('end', () => resolve({ status: res.statusCode, body: data }));
     });
     req.on('error', reject);
+    req.setTimeout(8000, () => req.destroy(new Error('Request timed out')));
+    if (bodyStr) req.write(bodyStr);
     req.end();
   });
 }
 
-// Resolves each cart line against the database.
-//
-// Two jobs at once:
-//   * flag sold-out variants
-//   * pin the price to the database row, because item.price arrives from
-//     the browser and cannot be trusted
-//
-// Carts saved before the id was added carry only a name, so fall back to it.
-// A line with no matching row keeps its posted price - index.html sells a
-// hardcoded featured shirt, and both listings fall back to a built-in
-// PRODUCTS array when Supabase is unreachable, so refusing unknown names
-// would break real sales.
+async function supabase(url, key, method, bodyStr) {
+  const parsed = new URL(url);
+  const headers = {
+    'apikey': key,
+    'Authorization': 'Bearer ' + key,
+    'Content-Type': 'application/json',
+  };
+  if (bodyStr) {
+    headers['Content-Length'] = Buffer.byteLength(bodyStr);
+    headers['Prefer'] = 'return=minimal';
+  }
+  const res = await request({
+    hostname: parsed.hostname,
+    path: parsed.pathname + parsed.search,
+    method,
+    headers,
+  }, bodyStr);
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error('Supabase ' + method + ' failed with ' + res.status);
+  }
+  return res.body ? JSON.parse(res.body) : null;
+}
+
+async function stripeCreateSession(secretKey, bodyStr) {
+  const res = await request({
+    hostname: 'api.stripe.com',
+    path: '/v1/checkout/sessions',
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + secretKey,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Length': Buffer.byteLength(bodyStr),
+    },
+  }, bodyStr);
+  const session = JSON.parse(res.body);
+  if (session.error) throw new Error(session.error.message);
+  return session;
+}
+
+// Short free text the customer chose (colour, size). Kept as text, but
+// bounded so it cannot be used to stuff the Stripe page or the order.
+function cleanText(v, max) {
+  return String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max);
+}
+
+function cleanQty(v) {
+  const n = parseInt(v, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, MAX_QTY);
+}
+
+// Matches every cart line to an active product row. Returns either
+// { error } for the customer, or { lines } priced from the database.
 function resolveCart(items, products) {
-  const byId   = new Map(products.map(p => [String(p.id), p]));
-  const byName = new Map(products.map(p => [String(p.name).trim().toLowerCase(), p]));
+  const active = products.filter(p => p.active !== false);
+  const byId   = new Map(active.map(p => [String(p.id), p]));
+  const byName = new Map(active.map(p => [String(p.name).trim().toLowerCase(), p]));
 
+  const lines   = [];
+  const missing = [];
   const soldOut = [];
-  const prices  = [];
 
-  items.forEach((item, i) => {
+  for (const item of items) {
+    if (!item || typeof item !== 'object') { missing.push('an item'); continue; }
+
+    // Carts saved before the id was added carry only a name, so fall back
+    // to an exact (case-insensitive) name match.
     const p = (item.id && byId.get(String(item.id)))
            || byName.get(String(item.name || '').trim().toLowerCase());
 
-    if (!p) { prices[i] = null; return; }
+    if (!p) { missing.push(cleanText(item.name, 60) || 'an item'); continue; }
 
-    const hasSizes = Array.isArray(p.sizes) && p.sizes.length;
-    if (!isAvailable(p, item.color || '', hasSizes ? (item.size || '') : '')) {
-      soldOut.push([p.name, item.color, item.size].filter(Boolean).join(' · '));
+    const price = Number(p.price);
+    if (!Number.isFinite(price) || price <= 0) { missing.push(p.name); continue; }
+
+    const color    = cleanText(item.color, 40);
+    const hasSizes = Array.isArray(p.sizes) && p.sizes.length > 0;
+    const size     = hasSizes ? cleanText(item.size, 20) : '';
+
+    if (!isAvailable(p, color, size)) {
+      soldOut.push([p.name, color, size].filter(Boolean).join(' · '));
+      continue;
     }
 
-    const dbPrice = Number(p.price);
-    prices[i] = Number.isFinite(dbPrice) && dbPrice >= 0 ? dbPrice : null;
-  });
+    // Picture: the colour's own image from the catalogue, then the image
+    // the cart carried if it is one of ours, then the product's main image.
+    const colorRow = Array.isArray(p.colors)
+      ? p.colors.find(c => c && c.name === color)
+      : null;
+    const candidates = [colorRow && colorRow.img, item.img, p.img];
+    const img = candidates.find(u => typeof u === 'string' && u.startsWith(IMAGE_PREFIX)) || '';
 
-  return { soldOut, prices };
-}
-
-// The posted price is only ever a fallback, and never a negative or
-// nonsensical one.
-function safePrice(posted) {
-  const n = Number(posted);
-  return Number.isFinite(n) && n >= 0 ? n : 0;
-}
-
-function safeQty(posted) {
-  const n = parseInt(posted, 10);
-  if (!Number.isFinite(n) || n < 1) return 1;
-  return Math.min(n, 99);
-}
-
-function stripeRequest(secretKey, bodyStr) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.stripe.com',
-      path: '/v1/checkout/sessions',
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + secretKey,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(bodyStr),
-      },
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch (e) { reject(new Error('Invalid response from Stripe: ' + data)); }
-      });
+    lines.push({
+      id:    p.id,
+      name:  p.name,
+      color,
+      size,
+      qty:   cleanQty(item.qty || item.quantity),
+      price,
+      img,
     });
-    req.on('error', reject);
-    req.write(bodyStr);
-    req.end();
-  });
+  }
+
+  if (missing.length) {
+    return { status: 400, error:
+      'These items are no longer available: ' + missing.join(', ') +
+      '. Please remove them from your cart and add them again.' };
+  }
+  if (soldOut.length) {
+    return { status: 409, error:
+      'Sold out: ' + soldOut.join(', ') + '. Please remove it from your cart and try again.',
+      soldOut };
+  }
+  return { lines };
 }
 
 exports.handler = async (event) => {
@@ -143,127 +192,114 @@ exports.handler = async (event) => {
   }
 
   const secretKey = process.env.STRIPE_SECRET_KEY;
-  if (!secretKey) {
-    return {
-      statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'STRIPE_SECRET_KEY is not set in Netlify environment variables.' }),
-    };
+  const sbUrl     = process.env.SUPABASE_URL;
+  const sbService = process.env.SUPABASE_SERVICE_KEY;
+  const sbRead    = sbService || process.env.SUPABASE_ANON_KEY;
+
+  if (!secretKey || !sbUrl || !sbService) {
+    console.error('create-checkout misconfigured:',
+      { stripe: !!secretKey, url: !!sbUrl, service: !!sbService });
+    return json(500, { error: 'Checkout is not available right now. Please contact us on WhatsApp.' });
   }
+
+  let items;
+  try {
+    ({ items } = JSON.parse(event.body || '{}'));
+  } catch (e) {
+    return json(400, { error: 'Invalid request' });
+  }
+  if (!Array.isArray(items) || !items.length) return json(400, { error: 'Cart is empty' });
+  if (items.length > MAX_LINES) return json(400, { error: 'Too many items in one order' });
+
+  // Prices come from here and nowhere else. If the database cannot be read,
+  // refuse rather than fall back to what the browser sent.
+  let products;
+  try {
+    products = await supabase(
+      sbUrl + '/rest/v1/products?select=id,name,price,sizes,colors,variants,img,active', sbRead, 'GET'
+    );
+    if (!Array.isArray(products)) throw new Error('Unexpected products response');
+  } catch (e) {
+    console.error('Product lookup failed:', e.message);
+    return json(503, { error: 'Checkout is temporarily unavailable. Please try again in a minute.' });
+  }
+
+  const resolved = resolveCart(items, products);
+  if (resolved.error) {
+    return json(resolved.status, { error: resolved.error, soldOut: resolved.soldOut });
+  }
+  const lines = resolved.lines;
+  const total = lines.reduce((s, l) => s + l.price * l.qty, 0);
+
+  // The order row is written here, server side, with the database prices,
+  // so it exists for every checkout no matter which page started it.
+  const orderId = 'ORD-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+  try {
+    await supabase(sbUrl + '/rest/v1/orders', sbService, 'POST', JSON.stringify({
+      order_id:      orderId,
+      customer_name: 'Stripe Checkout',
+      items:         lines,
+      total,
+      status:        'Pending',
+      date:          new Date().toLocaleString('en-GB', { timeZone: 'Asia/Bangkok' }),
+    }));
+  } catch (e) {
+    console.error('Order insert failed:', e.message);
+    return json(503, { error: 'Checkout is temporarily unavailable. Please try again in a minute.' });
+  }
+
+  // Never taken from the request: a caller-supplied origin would let anyone
+  // use this Stripe account to send buyers to a site of their choosing.
+  const baseUrl = (process.env.URL || 'https://burmelin.com').replace(/\/+$/, '');
+
+  const params = {};
+  params['mode'] = 'payment';
+  params['success_url'] = baseUrl + '/success.html?session_id={CHECKOUT_SESSION_ID}';
+  params['cancel_url'] = baseUrl + '/products.html';
+  params['phone_number_collection[enabled]'] = 'true';
+  params['client_reference_id'] = orderId;
+  params['metadata[order_id]'] = orderId;
+  params['payment_intent_data[metadata][order_id]'] = orderId;
+
+  SHIPPING_COUNTRIES.forEach((c, i) => {
+    params['shipping_address_collection[allowed_countries][' + i + ']'] = c;
+  });
+
+  SHIPPING_OPTIONS.forEach((opt, i) => {
+    const k = 'shipping_options[' + i + '][shipping_rate_data]';
+    params[k + '[type]']                     = 'fixed_amount';
+    params[k + '[fixed_amount][amount]']     = '0';
+    params[k + '[fixed_amount][currency]']   = 'thb';
+    params[k + '[display_name]']             = opt.name;
+    params[k + '[delivery_estimate][minimum][unit]']  = 'business_day';
+    params[k + '[delivery_estimate][minimum][value]'] = String(opt.min);
+    params[k + '[delivery_estimate][maximum][unit]']  = 'business_day';
+    params[k + '[delivery_estimate][maximum][value]'] = String(opt.max);
+  });
+
+  lines.forEach((l, i) => {
+    const k = 'line_items[' + i + ']';
+    params[k + '[price_data][currency]'] = 'thb';
+    params[k + '[price_data][product_data][name]'] = l.name;
+    const desc = [l.color && 'Color: ' + l.color, l.size && 'Size: ' + l.size].filter(Boolean).join(' | ');
+    if (desc) params[k + '[price_data][product_data][description]'] = desc;
+    params[k + '[price_data][unit_amount]'] = String(Math.round(l.price * 100));
+    params[k + '[quantity]'] = String(l.qty);
+    if (l.img) params[k + '[price_data][product_data][images][0]'] = l.img;
+  });
+
+  const encode = obj => Object.entries(obj)
+    .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+    .join('&');
 
   try {
-    const { items, origin, orderId } = JSON.parse(event.body);
-
-    if (!items || !items.length) {
-      return {
-        statusCode: 400,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Cart is empty' }),
-      };
-    }
-
-    // Re-check availability against the database before taking any money.
-    // If Supabase is unreachable we let the sale through rather than block
-    // every customer on an outage - the admin panel stays the source of truth.
-    // Prices resolved from the database, by cart index. A null entry means
-    // the line had no matching row and keeps its posted price.
-    let dbPrices = [];
-
-    const sbUrl = process.env.SUPABASE_URL;
-    // Service key so the price check still sees every product once RLS is on
-    // (the public policy exposes active products only). Falls back to anon.
-    const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
-    if (sbUrl && sbKey) {
-      try {
-        const products = await supabaseGet(
-          sbUrl + '/rest/v1/products?select=id,name,price,sizes,variants', sbKey
-        );
-        if (Array.isArray(products)) {
-          const { soldOut, prices } = resolveCart(items, products);
-          dbPrices = prices;
-          if (soldOut.length) {
-            return {
-              statusCode: 409,
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                error: 'Sold out: ' + soldOut.join(', ') +
-                       '. Please remove it from your cart and try again.',
-                soldOut,
-              }),
-            };
-          }
-        }
-      } catch (e) {
-        console.error('Availability check skipped:', e.message);
-      }
-    }
-
-    const baseUrl = origin || process.env.URL || 'https://burmelin.com';
-
-    const params = {};
-    params['mode'] = 'payment';
-    params['success_url'] = baseUrl + '/success.html?session_id={CHECKOUT_SESSION_ID}';
-    params['cancel_url'] = baseUrl + '/products.html';
-    params['phone_number_collection[enabled]'] = 'true';
-    if (orderId) params['metadata[order_id]'] = orderId;
-
-    SHIPPING_COUNTRIES.forEach((c, i) => {
-      params['shipping_address_collection[allowed_countries][' + i + ']'] = c;
-    });
-
-    // Shipping is free everywhere. Two options rather than one so the
-    // customer sees an honest delivery estimate for where they are, and so
-    // the chosen name lands on the order to say which service to use.
-    // Stripe allows at most 5 shipping_options on a session.
-    SHIPPING_OPTIONS.forEach((opt, i) => {
-      const k = 'shipping_options[' + i + '][shipping_rate_data]';
-      params[k + '[type]']                     = 'fixed_amount';
-      params[k + '[fixed_amount][amount]']     = '0';
-      params[k + '[fixed_amount][currency]']   = 'thb';
-      params[k + '[display_name]']             = opt.name;
-      params[k + '[delivery_estimate][minimum][unit]']  = 'business_day';
-      params[k + '[delivery_estimate][minimum][value]'] = String(opt.min);
-      params[k + '[delivery_estimate][maximum][unit]']  = 'business_day';
-      params[k + '[delivery_estimate][maximum][value]'] = String(opt.max);
-    });
-
-    items.forEach((item, i) => {
-      // Database price wins; the posted one is only used for lines with no
-      // matching row, so a tampered cart cannot set its own price.
-      const unitPrice = dbPrices[i] != null ? dbPrices[i] : safePrice(item.price);
-
-      params['line_items[' + i + '][price_data][currency]'] = 'thb';
-      params['line_items[' + i + '][price_data][product_data][name]'] = item.name;
-      params['line_items[' + i + '][price_data][product_data][description]'] = 'Color: ' + item.color + ' | Size: ' + item.size;
-      params['line_items[' + i + '][price_data][unit_amount]'] = String(Math.round(unitPrice * 100));
-      params['line_items[' + i + '][quantity]'] = String(safeQty(item.qty || item.quantity));
-      if (item.img) {
-        params['line_items[' + i + '][price_data][product_data][images][0]'] = item.img;
-      }
-    });
-
-    const encode = obj => Object.entries(obj)
-      .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
-      .join('&');
-
-    const session = await stripeRequest(secretKey, encode(params));
-
-    if (session.error) {
-      throw new Error(session.error.message);
-    }
-
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: session.url }),
-    };
-
+    const session = await stripeCreateSession(secretKey, encode(params));
+    return json(200, { url: session.url, orderId });
   } catch (err) {
     console.error('Checkout error:', err.message);
-    return {
-      statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: err.message }),
-    };
+    return json(502, { error: 'Could not start checkout. Please try again.' });
   }
 };
+
+// Exposed for local tests only.
+exports._resolveCart = resolveCart;

@@ -54,9 +54,11 @@ async function saveToSupabase(supabaseUrl, serviceKey, orderId, customer) {
 }
 
 exports.handler = async (event) => {
-  const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
+  const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const sessionId = event.queryStringParameters && event.queryStringParameters.session_id;
-  if (!sessionId) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing session_id' }) };
+  if (!sessionId || !/^cs_(live|test)_[A-Za-z0-9]+$/.test(sessionId)) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing or invalid session_id' }) };
+  }
 
   const secretKey    = process.env.STRIPE_SECRET_KEY;
   const supabaseUrl  = process.env.SUPABASE_URL;
@@ -78,7 +80,11 @@ exports.handler = async (event) => {
       email:   customer.email || '',
       phone:   customer.phone || '',
       address: [addr.line1, addr.line2, addr.city, addr.state, addr.postal_code, addr.country].filter(Boolean).join(', '),
-      orderId: orderId || ''
+      orderId: orderId || '',
+      // Lets the success page tell a confirmed payment from a pending
+      // PromptPay one, and report the real total to analytics.
+      paid:    session.payment_status === 'paid' || session.payment_status === 'no_payment_required',
+      total:   (session.amount_total || 0) / 100
     };
 
     if (orderId && supabaseUrl && serviceKey) {
@@ -87,6 +93,7 @@ exports.handler = async (event) => {
 
     return { statusCode: 200, headers, body: JSON.stringify(result) };
   } catch(err) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+    console.error('get-session error:', err.message);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Could not load order' }) };
   }
 };

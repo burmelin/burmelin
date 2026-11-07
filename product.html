@@ -719,11 +719,7 @@ async function goToCheckout() {
   const btn = document.getElementById('checkoutBtn');
   btn.textContent = 'Processing...'; btn.disabled = true;
   try {
-    const total   = cart.reduce((s, i) => s + i.price * i.qty, 0);
-    const orderId = 'ORD-' + Date.now();
-    const d       = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Bangkok' });
-    fetch('/.netlify/functions/save-order', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ order_id: orderId, customer_name: 'Stripe Checkout', items: cart, total, status: 'Pending', date: d }) }).catch(()=>{});
-    const res  = await fetch('/.netlify/functions/create-checkout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ items: cart, origin: location.origin, orderId }) });
+    const res  = await fetch('/.netlify/functions/create-checkout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({items:cart}) });
     const data = await res.json();
     if (data.url) { window.location.href = data.url; }
     else { throw new Error(data.error || 'Checkout failed'); }

@@ -193,19 +193,22 @@ const params=new URLSearchParams(window.location.search);
 const sid=params.get('session_id');
 if(sid){
   document.getElementById('sessionRef').textContent=sid.slice(-12).toUpperCase();
-  fetch('/.netlify/functions/get-session?session_id='+sid)
+  fetch('/.netlify/functions/get-session?session_id='+encodeURIComponent(sid))
     .then(r=>r.json())
     .then(d=>{
       if(d.error)return;
       const box=document.getElementById('customerDetails');
+      const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       let html='<strong>Shipping to:</strong><br/>';
-      if(d.name)    html+=d.name+'<br/>';
-      if(d.phone)   html+=d.phone+'<br/>';
-      if(d.address) html+=d.address+'<br/>';
-      html+='<br/>We will process and dispatch within 1–3 business days.';
+      if(d.name)    html+=esc(d.name)+'<br/>';
+      if(d.phone)   html+=esc(d.phone)+'<br/>';
+      if(d.address) html+=esc(d.address)+'<br/>';
+      html+=d.paid
+        ?'<br/>We will process and dispatch within 1–3 business days.'
+        :'<br/><strong>Your payment is still being confirmed.</strong> We will email you as soon as it arrives, and dispatch within 1–3 business days after that.';
       box.innerHTML=html;
-      // Meta Pixel Purchase event
-      if(typeof fbq==='function' && d.total){
+      // Meta Pixel Purchase event - only for money actually received.
+      if(typeof fbq==='function' && d.paid && d.total){
         try{
           const lastCart=JSON.parse(localStorage.getItem('burmelinLastCart')||'[]');
           fbq('track','Purchase',{

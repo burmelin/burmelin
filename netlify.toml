@@ -35,6 +35,15 @@
   status = 404
   force = true
 
+# The function source lives under /netlify/functions and would otherwise be
+# downloadable as plain files. The functions themselves run at
+# /.netlify/functions/* (note the dot), which this rule does not touch.
+[[redirects]]
+  from = "/netlify/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
 # Belt and braces alongside the noindex meta tag in admin.html: the header
 # applies even when a crawler does not parse the HTML.
 [[headers]]
