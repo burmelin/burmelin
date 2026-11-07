@@ -5,8 +5,9 @@ const https = require('https');
 // Served through a redirect in netlify.toml. Env: SUPABASE_URL, SUPABASE_ANON_KEY.
 
 const SITE = 'https://burmelin.com';
+// The blog-*.html pages are left out while they are "Coming Soon" placeholders
+// (they also carry noindex). Add them back once they have real articles.
 const PAGES = ['', 'products.html', 'about.html', 'stores.html',
-  'blog-formal.html', 'blog-smart-casual.html', 'blog-weekend.html',
   'privacy.html', 'terms.html'];
 
 function getJson(url, key) {

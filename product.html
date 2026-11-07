@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title id="metaTitle">Product — BURMELIN</title>
-<meta name="description" id="metaDesc" content="Shop premium men's clothing at BURMELIN."/>
+<title id="metaTitle">Men's Linen Shirts, Chinos &amp; Polos | BURMELIN</title>
+<meta name="description" id="metaDesc" content="Classic menswear for Thai heat from BURMELIN. Order online for delivery across Thailand, or try it on at Terminal 21 Bangkok."/>
 <!-- OG tags for Meta Ads -->
 <meta property="og:type" content="product"/>
 <meta property="og:site_name" content="BURMELIN"/>
@@ -446,6 +446,14 @@ async function loadProduct(id) {
   }
 }
 
+function shortenForMeta(text, max = 155) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return (space > 80 ? cut.slice(0, space) : cut).replace(/[\s,.;:–—-]+$/, '') + '…';
+}
+
 function renderProduct() {
   document.getElementById('prodLoader').style.display = 'none';
   document.getElementById('prodContent').style.display = '';
@@ -453,11 +461,22 @@ function renderProduct() {
   const p = product;
   const catLabel = CAT_LABELS[p.cat] || p.cat || '';
 
-  // Meta / OG tags
-  document.getElementById('metaTitle').textContent  = `${p.name} — BURMELIN`;
-  document.getElementById('metaDesc').content       = p.description || `Shop ${p.name} at BURMELIN`;
-  document.getElementById('ogTitle').content        = `${p.name} — BURMELIN`;
-  document.getElementById('ogDesc').content         = p.description || `Shop ${p.name} at BURMELIN`;
+  // Meta / OG tags. Google shows about 60 characters of a title and about
+  // 155 of a description, so long product descriptions are cut at a word.
+  // "White Linen Shirt, Men's Shirt" repeats itself, so only add the category
+  // when the product name doesn't already say it.
+  const catWord = catLabel.split(' ').pop().toLowerCase().replace(/s$/, '');
+  const nameHasCat = catWord && p.name.toLowerCase().includes(catWord);
+  const metaTitle = !catLabel ? `${p.name} | BURMELIN`
+    : nameHasCat ? `Men's ${p.name} | BURMELIN`
+    : `${p.name}, Men's ${catLabel} | BURMELIN`;
+  const priceText = p.price ? ` ฿${Number(p.price).toLocaleString('en-US')}, VAT included.` : '';
+  const fallbackDesc = `${p.name}, ${catLabel ? "men's " + catLabel.toLowerCase() : "menswear"} by BURMELIN.${priceText} Order online or try it on at Terminal 21 Bangkok.`;
+  const metaDesc = shortenForMeta(p.description) || fallbackDesc;
+  document.title = metaTitle;
+  document.getElementById('metaDesc').content       = metaDesc;
+  document.getElementById('ogTitle').content        = metaTitle;
+  document.getElementById('ogDesc').content         = metaDesc;
   document.getElementById('ogImage').content        = p.img || '';
   document.getElementById('ogUrl').content          = location.href;
   document.getElementById('ogPrice').content        = p.price;
