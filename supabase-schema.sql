@@ -38,13 +38,15 @@ CREATE TABLE IF NOT EXISTS orders (
   address       text DEFAULT '',
   items         jsonb DEFAULT '[]',
   total         numeric DEFAULT 0,
-  status        text DEFAULT 'Pending',
+  status        text DEFAULT 'Pending',  -- Pending, Awaiting payment, Payment failed,
+                                         -- Processing, Shipped, Delivered, Cancelled
   date          text,
   created_at    timestamptz DEFAULT now()
 );
 
 -- Columns added after the original tables were created.
 ALTER TABLE products ADD COLUMN IF NOT EXISTS variants jsonb DEFAULT '{}'::jsonb;
+ALTER TABLE orders   ADD COLUMN IF NOT EXISTS email    text  DEFAULT '';
 UPDATE products SET variants = '{}'::jsonb WHERE variants IS NULL;
 
 -- ── THE `variants` COLUMN ───────────────────────────────────
@@ -66,7 +68,8 @@ UPDATE products SET variants = '{}'::jsonb WHERE variants IS NULL;
 --
 --   get-products.js    anon key    SELECT active products   → policy below
 --   create-checkout.js service key SELECT all products      → bypasses RLS
---   save-order.js      service key INSERT orders            → bypasses RLS
+--   save-order.js      service key INSERT orders (WhatsApp) → bypasses RLS
+--   create-checkout.js service key INSERT orders (Stripe)   → bypasses RLS
 --   get-session.js     service key SELECT/UPDATE orders     → bypasses RLS
 --   stripe-webhook.js  service key SELECT/UPDATE orders     → bypasses RLS
 --   admin-api.js       service key everything               → bypasses RLS

@@ -1157,6 +1157,8 @@ let currentOrdId = null;
 function statusStyle(st) {
   const map = {
     Pending:    'color:#fbbf24;border-color:rgba(251,191,36,.35)',
+    'Awaiting payment': 'color:#fb923c;border-color:rgba(251,146,60,.35)',
+    'Payment failed':   'color:#f87171;border-color:rgba(248,113,113,.35)',
     Processing: 'color:#60a5fa;border-color:rgba(96,165,250,.35)',
     Shipped:    'color:#a78bfa;border-color:rgba(167,139,250,.35)',
     Delivered:  'color:#4ade80;border-color:rgba(74,222,128,.35)',
@@ -1205,7 +1207,7 @@ function openOrdModal(id) {
   // Status selector
   const sel = document.getElementById('omStatusSel');
   sel.className = 'status-sel s-' + st.replace(/\s+/g, '');
-  sel.innerHTML = ['Pending','Processing','Shipped','Delivered','Cancelled']
+  sel.innerHTML = ['Pending','Awaiting payment','Payment failed','Processing','Shipped','Delivered','Cancelled']
     .map(s => `<option${o.status===s?' selected':''}>${s}</option>`).join('');
   sel.dataset.ordId = id;
 

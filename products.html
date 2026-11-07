@@ -598,7 +598,7 @@ function orderWhatsApp(){
   msg+='Delivery Address:';
   window.open('https://wa.me/66642071080?text='+encodeURIComponent(msg),'_blank');
   const d=new Date().toLocaleString('en-GB',{timeZone:'Asia/Bangkok'});
-  fetch('/.netlify/functions/save-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_id:'ORD-'+Date.now(),customer_name:'WhatsApp',items:cart,total,status:'Pending',date:d})}).catch(()=>{});
+  fetch('/.netlify/functions/save-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:cart})}).catch(()=>{});
 }
 
 // Modal
@@ -731,14 +731,10 @@ async function goToCheckout(){
   btn.disabled=true;
   try{
     // Save order to Supabase before redirecting (best-effort)
-    const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
-    const orderId='ORD-'+Date.now();
-    const d=new Date().toLocaleString('en-GB',{timeZone:'Asia/Bangkok'});
-    fetch('/.netlify/functions/save-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_id:orderId,customer_name:'Stripe Checkout',items:cart,total,status:'Pending',date:d})}).catch(()=>{});
     const res=await fetch('/.netlify/functions/create-checkout',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({items:cart,origin:window.location.origin,orderId})
+      body:JSON.stringify({items:cart})
     });
     const data=await res.json();
     if(data.url){
