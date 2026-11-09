@@ -56,3 +56,27 @@
   for = "/admin.html"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
+
+# Site icon. Google only shows a favicon in search results if it is square and
+# at least 48x48; the old link pointed at the wide 170x120 logo file. These
+# rules serve a square, white-backed crop of the same Cloudinary logo from our
+# own domain (status 200 = proxy, so the URL stays burmelin.com/...).
+# The crop is centred on the mark: the source canvas is 4750x3359 and the mark
+# spans x 1599-3028, so a 3359px square starting at x 634 centres it.
+[[redirects]]
+  from = "/favicon.ico"
+  to = "https://res.cloudinary.com/dtpvflgt1/image/upload/c_crop,x_634,y_0,w_3359,h_3359/c_scale,w_48/b_white,f_jpg,q_95/v1773996384/LOGO_q2howi.jpg"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/icon-192.jpg"
+  to = "https://res.cloudinary.com/dtpvflgt1/image/upload/c_crop,x_634,y_0,w_3359,h_3359/c_scale,w_192/b_white,f_jpg,q_95/v1773996384/LOGO_q2howi.jpg"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/apple-touch-icon.png"
+  to = "https://res.cloudinary.com/dtpvflgt1/image/upload/c_crop,x_634,y_0,w_3359,h_3359/c_scale,w_180/b_white,f_jpg,q_95/v1773996384/LOGO_q2howi.jpg"
+  status = 200
+  force = true
