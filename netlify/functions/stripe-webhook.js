@@ -279,11 +279,16 @@ function verifySignature(rawBody, header, secret) {
 // (checkout.session.async_payment_failed). An order is only marked
 // Processing, and only gets its emails, once the payment is confirmed.
 //
-// The Stripe webhook endpoint must be subscribed to all three events.
+// checkout.session.expired fires when a customer leaves the Stripe page
+// without paying and the session times out (24 hours). The order is then
+// marked Expired, so abandoned carts do not stay Pending forever.
+//
+// The Stripe webhook endpoint must be subscribed to all four events.
 const HANDLED = new Set([
   'checkout.session.completed',
   'checkout.session.async_payment_succeeded',
   'checkout.session.async_payment_failed',
+  'checkout.session.expired',
 ]);
 
 // Statuses an order can be in before it is paid. The paid transition only
@@ -331,6 +336,18 @@ exports.handler = async (event) => {
     // Re-read the session from Stripe rather than trusting the event body.
     const session  = await stripeGet(secretKey, stripeEvent.data.object.id);
     if (session.error) throw new Error(session.error.message);
+
+    if (stripeEvent.type === 'checkout.session.expired') {
+      const expiredOrderId = (session.metadata && session.metadata.order_id) || session.client_reference_id;
+      // Only touch an order that is still Pending and whose session Stripe
+      // really reports as expired. Never overwrites a paid or shipped order.
+      if (session.status === 'expired' && expiredOrderId && supabaseUrl && serviceKey) {
+        await updateOrder(supabaseUrl, serviceKey, expiredOrderId, 'status=eq.Pending',
+          { status: 'Expired' });
+      }
+      console.log(`Order ${expiredOrderId} checkout expired`);
+      return { statusCode: 200, body: JSON.stringify({ received: true, orderId: expiredOrderId, expired: true }) };
+    }
 
     const customer = session.customer_details || {};
     // Where the parcel goes. Newer Stripe API versions keep it under
