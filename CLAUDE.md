@@ -4,7 +4,7 @@
 Burmelin's public website at burmelin.com: the shops' online presence, with online ordering and a newsletter.
 - Pages: home (`index.html`), products, product, stores, about, privacy, terms, and success (after payment).
 - The admin page (`admin.html`) is password-protected. The owner uses it.
-- The three blog pages (`blog-*.html`) are placeholders. They are not linked from anywhere, so don't link them until the owner approves the content.
+- There is no blog. The three "Coming Soon" blog placeholder pages (`blog-*.html`) are removed by pull request #9; until that merges they are still on the live site, unlinked and hidden from Google. Don't add blog pages back until the owner approves real articles.
 - Customers pay through Stripe (live mode, real money) and can sign up for the newsletter.
 - Stores page: four shops, all Burmelin's own. BURMELIN Asok, Bicasso 1 and Bicasso 2 are at Terminal 21 Asok Mall. Bicasso Nana is at Nana Square. The Bicasso shops keep that name for now.
 - The Terminal 21 Rama 3 shop is permanently closed. Don't add it back. (The "Rama 3 Opens" line on the about page is company history, not a shop listing.)
