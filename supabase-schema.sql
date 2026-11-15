@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS orders (
   items         jsonb DEFAULT '[]',
   total         numeric DEFAULT 0,
   status        text DEFAULT 'Pending',  -- Pending, Awaiting payment, Payment failed,
-                                         -- Processing, Shipped, Delivered, Cancelled
+                                         -- Processing, Shipped, Delivered, Cancelled,
+                                         -- Expired (checkout timed out unpaid)
   date          text,
   created_at    timestamptz DEFAULT now()
 );
