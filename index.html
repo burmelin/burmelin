@@ -576,8 +576,6 @@ src="https://www.facebook.com/tr?id=1016610101191905&ev=PageView&noscript=1"
       <button class="pill" onclick="filterCat(this,'polo')">Polo Shirts</button>
       <button class="pill" onclick="filterCat(this,'tshirt')">T-Shirts</button>
       <button class="pill" onclick="filterCat(this,'pants')">Linen Pants</button>
-      <button class="pill" onclick="filterCat(this,'jeans')">Jeans</button>
-      <button class="pill" onclick="filterCat(this,'jacket')">Jackets</button>
       <button class="pill" onclick="filterCat(this,'shirt')">Linen Shirts</button>
       <button class="pill" onclick="filterCat(this,'chino')">Chino Pants</button>
       <button class="pill" onclick="filterCat(this,'undergarments')">Undergarments</button>
@@ -800,7 +798,7 @@ src="https://www.facebook.com/tr?id=1016610101191905&ev=PageView&noscript=1"
           <a class="social-btn" href="https://wa.me/66642071080" target="_blank" rel="noopener" aria-label="Message BURMELIN on WhatsApp"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></a>
         </div>
       </div>
-      <div><div class="footer-heading">Shop</div><div class="footer-links"><button class="footer-link" onclick="window.location.href='products.html'">Polo Shirts</button><button class="footer-link" onclick="window.location.href='products.html'">T-Shirts</button><button class="footer-link" onclick="window.location.href='products.html'">Linen Pants</button><button class="footer-link" onclick="window.location.href='products.html'">Jeans</button><button class="footer-link" onclick="window.location.href='products.html'">Jackets</button></div></div>
+      <div><div class="footer-heading">Shop</div><div class="footer-links"><button class="footer-link" onclick="window.location.href='products.html'">Polo Shirts</button><button class="footer-link" onclick="window.location.href='products.html'">T-Shirts</button><button class="footer-link" onclick="window.location.href='products.html'">Linen Pants</button></div></div>
       <div><div class="footer-heading">Company</div><div class="footer-links"><button class="footer-link" onclick="window.location.href='about.html'">About Us</button><button class="footer-link" onclick="window.location.href='stores.html'">Store Locations</button><a href="https://wa.me/66642071080?text=Hi%20Burmelin%2C%20I%27d%20like%20to%20ask%20about%20wholesale%20orders." class="footer-link" target="_blank" rel="noopener">Wholesale</a></div></div>
       <div><div class="footer-heading">Help</div><div class="footer-links"><a href="javascript:void(0)" class="footer-link" onclick="openSizeGuide()">Size Guide</a><a href="terms.html" class="footer-link">Exchange Policy</a><a href="javascript:void(0)" class="footer-link" onclick="openSizeGuide()">Care Instructions</a><a href="https://wa.me/66642071080" class="footer-link">Contact Us</a><a href="#" class="footer-link">FAQ</a></div></div>
     </div>
@@ -834,7 +832,7 @@ src="https://www.facebook.com/tr?id=1016610101191905&ev=PageView&noscript=1"
       </button>
     </div>
     <div class="search-results" id="searchResults">
-      <div class="search-tip">Try "polo", "linen pants", "jacket"...</div>
+      <div class="search-tip">Try "polo", "linen pants", "chino"...</div>
     </div>
   </div>
 </div>
@@ -924,7 +922,7 @@ function openSearch(){
 function closeSearch(){
   document.getElementById('searchOverlay').classList.remove('open');
   document.getElementById('searchBoxInput').value='';
-  document.getElementById('searchResults').innerHTML='<div class="search-tip">Try "polo", "linen pants", "jacket"...</div>';
+  document.getElementById('searchResults').innerHTML='<div class="search-tip">Try "polo", "linen pants", "chino"...</div>';
 }
 function handleSearchOverlayClick(e){
   if(e.target===document.getElementById('searchOverlay')) closeSearch();
@@ -932,7 +930,7 @@ function handleSearchOverlayClick(e){
 function runSearch(query){
   const results = document.getElementById('searchResults');
   if(!query.trim()){
-    results.innerHTML='<div class="search-tip">Try "polo", "linen pants", "jacket"...</div>';
+    results.innerHTML='<div class="search-tip">Try "polo", "linen pants", "chino"...</div>';
     return;
   }
   const q = query.toLowerCase();
